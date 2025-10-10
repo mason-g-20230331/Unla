@@ -39,13 +39,6 @@ jobs:
       - name: Set lowercase repository
         run: echo "LOWERCASE_REPO=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
-      - name: Login to Docker Hub
-        if: env.SHOULD_LOGIN == 'true'
-        uses: docker/login-action@v3
-        with:
-          username: ${{ env.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_TOKEN }}
-
       - name: Login to GitHub Container Registry
         if: env.SHOULD_LOGIN == 'true'
         uses: docker/login-action@v3
@@ -53,14 +46,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Login to Aliyun Container Registry
-        if: env.SHOULD_LOGIN == 'true'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.ALIYUN_REGISTRY }}
-          username: ${{ secrets.ALIYUN_USERNAME }}
-          password: ${{ secrets.ALIYUN_PASSWORD }}
 
       - name: Build and push mcp-gateway image
         uses: docker/build-push-action@v5
@@ -72,9 +57,5 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           tags: |
-            ${{ env.PUSH_LATEST == 'true' && format('{0}/unla-mcp-gateway:latest', env.DOCKER_HUB_USERNAME) || '' }}
-            ${{ format('{0}/unla-mcp-gateway:{1}', env.DOCKER_HUB_USERNAME, github.ref_name) }}
             ${{ env.PUSH_LATEST == 'true' && format('ghcr.io/{0}/mcp-gateway:latest', env.LOWERCASE_REPO) || '' }}
             ${{ format('ghcr.io/{0}/mcp-gateway:{1}', env.LOWERCASE_REPO, github.ref_name) }}
-            ${{ env.PUSH_LATEST == 'true' && format('{0}/unla-mcp-gateway:latest', env.ALIYUN_REGISTRY) || '' }}
-            ${{ format('{0}/unla-mcp-gateway:{1}', env.ALIYUN_REGISTRY, github.ref_name) }}
