@@ -179,6 +179,8 @@ func initRouter(ctx context.Context, db database.Database, store storage.Store, 
 		oauthG.GET("/google/callback", oauthH.GoogleCallback)
 		oauthG.GET("/github/login", oauthH.GitHubLogin)
 		oauthG.GET("/github/callback", oauthH.GitHubCallback)
+		oauthG.GET("/okta/login", oauthH.OktaLogin)
+		oauthG.GET("/okta/callback", oauthH.OktaCallback)
 	}
 
 	// Protected routes

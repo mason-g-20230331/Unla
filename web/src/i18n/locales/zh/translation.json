@@ -122,6 +122,7 @@
     "or_continue_with": "或继续使用",
     "continue_with_google": "使用 Google 继续",
     "continue_with_github": "使用 GitHub 继续",
+    "continue_with_okta": "使用 Okta 继续",
     "oauth_login_failed": "OAuth 登录失败"
   },
   "gateway": {

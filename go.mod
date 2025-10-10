@@ -5,6 +5,7 @@ go 1.24.1
 require (
 	github.com/BurntSushi/toml v1.5.0
 	github.com/alicebob/miniredis/v2 v2.35.0
+	github.com/coreos/go-oidc/v3 v3.16.0
 	github.com/getkin/kin-openapi v0.131.0
 	github.com/gin-gonic/gin v1.11.0
 	github.com/glebarez/sqlite v1.11.0
@@ -27,6 +28,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.38.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.41.0
+	golang.org/x/oauth2 v0.30.0
 	golang.org/x/text v0.28.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
@@ -41,6 +43,7 @@ require github.com/mattn/go-sqlite3 v1.14.22 // indirect
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/goccy/go-yaml v1.18.0 // indirect

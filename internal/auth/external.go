@@ -10,7 +10,9 @@ import (
 	"strings"
 
 	"github.com/amoylab/unla/internal/common/config"
+	"github.com/coreos/go-oidc/v3/oidc"
 	"go.uber.org/zap"
+	"golang.org/x/oauth2"
 )
 
 // ExternalOAuth defines the interface for external OAuth providers
@@ -317,4 +319,114 @@ func (gh *GitHubOAuth) getUserEmail(ctx context.Context, accessToken string) (st
 	}
 
 	return "", fmt.Errorf("no email found")
+}
+
+// OktaOAuth implements Okta OIDC provider
+type OktaOAuth struct {
+	logger       *zap.Logger
+	domain       string
+	clientID     string
+	clientSecret string
+	redirectURI  string
+	provider     *oidc.Provider
+	verifier     *oidc.IDTokenVerifier
+	oauth2Config *oauth2.Config
+}
+
+// NewOktaOAuth creates a new Okta OIDC provider
+func NewOktaOAuth(ctx context.Context, logger *zap.Logger, cfg config.OktaOAuthConfig) (*OktaOAuth, error) {
+	issuerURL := fmt.Sprintf("https://%s", cfg.Domain)
+
+	provider, err := oidc.NewProvider(ctx, issuerURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create OIDC provider: %w", err)
+	}
+
+	verifier := provider.Verifier(&oidc.Config{
+		ClientID: cfg.ClientID,
+	})
+
+	oauth2Config := &oauth2.Config{
+		ClientID:     cfg.ClientID,
+		ClientSecret: cfg.ClientSecret,
+		RedirectURL:  cfg.RedirectURI,
+		Endpoint:     provider.Endpoint(),
+		Scopes:       []string{oidc.ScopeOpenID, "email", "profile"},
+	}
+
+	return &OktaOAuth{
+		logger:       logger.Named("auth.okta"),
+		domain:       cfg.Domain,
+		clientID:     cfg.ClientID,
+		clientSecret: cfg.ClientSecret,
+		redirectURI:  cfg.RedirectURI,
+		provider:     provider,
+		verifier:     verifier,
+		oauth2Config: oauth2Config,
+	}, nil
+}
+
+// GetAuthURL returns the Okta OIDC authorization URL
+func (o *OktaOAuth) GetAuthURL(state string) string {
+	return o.oauth2Config.AuthCodeURL(state)
+}
+
+// ExchangeCode exchanges authorization code for access token and validates ID token
+func (o *OktaOAuth) ExchangeCode(ctx context.Context, code string) (*ExternalTokenResponse, error) {
+	oauth2Token, err := o.oauth2Config.Exchange(ctx, code)
+	if err != nil {
+		return nil, fmt.Errorf("failed to exchange code: %w", err)
+	}
+
+	// Verify ID token
+	rawIDToken, ok := oauth2Token.Extra("id_token").(string)
+	if !ok {
+		return nil, fmt.Errorf("no id_token in token response")
+	}
+
+	_, err = o.verifier.Verify(ctx, rawIDToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify ID token: %w", err)
+	}
+
+	expiresIn := 0
+	if !oauth2Token.Expiry.IsZero() {
+		expiresIn = int(oauth2Token.Expiry.Sub(oauth2Token.Expiry.Add(-3600 * 1000000000)).Seconds())
+	}
+
+	return &ExternalTokenResponse{
+		AccessToken:  oauth2Token.AccessToken,
+		TokenType:    oauth2Token.TokenType,
+		RefreshToken: oauth2Token.RefreshToken,
+		ExpiresIn:    expiresIn,
+	}, nil
+}
+
+// GetUserInfo retrieves user information from Okta userinfo endpoint
+func (o *OktaOAuth) GetUserInfo(ctx context.Context, accessToken string) (*ExternalUserInfo, error) {
+	userInfo, err := o.provider.UserInfo(ctx, oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken}))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user info: %w", err)
+	}
+
+	var claims struct {
+		Sub               string `json:"sub"`
+		Email             string `json:"email"`
+		Name              string `json:"name"`
+		PreferredUsername string `json:"preferred_username"`
+		Picture           string `json:"picture"`
+	}
+
+	if err := userInfo.Claims(&claims); err != nil {
+		return nil, fmt.Errorf("failed to parse user info claims: %w", err)
+	}
+
+	return &ExternalUserInfo{
+		ID:       claims.Sub,
+		Email:    claims.Email,
+		Name:     claims.Name,
+		Username: claims.PreferredUsername,
+		Picture:  claims.Picture,
+		Provider: "okta",
+	}, nil
 }

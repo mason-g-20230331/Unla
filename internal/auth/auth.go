@@ -17,8 +17,10 @@ type Auth interface {
 	GetOAuth2CORS() *config.CORSConfig
 	GetGoogleOAuth() ExternalOAuth
 	GetGitHubOAuth() ExternalOAuth
+	GetOktaOAuth() ExternalOAuth
 	IsGoogleOAuthEnabled() bool
 	IsGitHubOAuthEnabled() bool
+	IsOktaOAuthEnabled() bool
 }
 
 type OAuth2 interface {
@@ -72,10 +74,13 @@ type auth struct {
 	cfg         config.AuthConfig
 	googleOAuth *GoogleOAuth
 	githubOAuth *GitHubOAuth
+	oktaOAuth   *OktaOAuth
 }
 
 // NewAuth creates a new auth oauth based on the configuration
 func NewAuth(logger *zap.Logger, cfg config.AuthConfig) (Auth, error) {
+	ctx := context.Background()
+
 	a := &auth{
 		cfg: cfg,
 	}
@@ -91,6 +96,14 @@ func NewAuth(logger *zap.Logger, cfg config.AuthConfig) (Auth, error) {
 	}
 	if cfg.GitHub != nil {
 		a.githubOAuth = NewGitHubOAuth(logger, *cfg.GitHub)
+	}
+	if cfg.Okta != nil {
+		oktaOAuth, err := NewOktaOAuth(ctx, logger, *cfg.Okta)
+		if err != nil {
+			logger.Warn("Failed to initialize Okta OAuth", zap.Error(err))
+		} else {
+			a.oktaOAuth = oktaOAuth
+		}
 	}
 	return a, nil
 }
@@ -134,4 +147,15 @@ func (a *auth) IsGoogleOAuthEnabled() bool {
 func (a *auth) IsGitHubOAuthEnabled() bool {
 	return a.cfg.GitHub != nil && a.githubOAuth != nil &&
 		a.cfg.GitHub.ClientID != "" && a.cfg.GitHub.ClientSecret != ""
+}
+
+// GetOktaOAuth returns the Okta OAuth provider
+func (a *auth) GetOktaOAuth() ExternalOAuth {
+	return a.oktaOAuth
+}
+
+// IsOktaOAuthEnabled returns true if Okta OAuth is enabled
+func (a *auth) IsOktaOAuthEnabled() bool {
+	return a.cfg.Okta != nil && a.oktaOAuth != nil &&
+		a.cfg.Okta.ClientID != "" && a.cfg.Okta.ClientSecret != ""
 }

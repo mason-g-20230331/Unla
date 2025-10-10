@@ -99,6 +99,13 @@ auth:
     client_secret: "${GITHUB_OAUTH_CLIENT_SECRET:}"
     redirect_uri: "${GITHUB_OAUTH_REDIRECT_URI:http://localhost:5234/api/auth/oauth/github/callback}"
 
+  # Okta OIDC configuration (optional)
+  okta:
+    domain: "${OKTA_OAUTH_DOMAIN:}"
+    client_id: "${OKTA_OAUTH_CLIENT_ID:}"
+    client_secret: "${OKTA_OAUTH_CLIENT_SECRET:}"
+    redirect_uri: "${OKTA_OAUTH_REDIRECT_URI:http://localhost:5234/api/auth/oauth/okta/callback}"
+
 # MCP runtime (capabilities sync/cache) configuration
 mcp:
   # Background refresh interval for fetching capabilities from MCP servers

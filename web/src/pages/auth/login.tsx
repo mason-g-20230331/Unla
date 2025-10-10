@@ -16,6 +16,7 @@ interface OAuthProvider {
 interface OAuthProviders {
   google?: OAuthProvider;
   github?: OAuthProvider;
+  okta?: OAuthProvider;
 }
 
 export function LoginPage() {
@@ -137,15 +138,15 @@ export function LoginPage() {
     }
   };
 
-  const handleOAuthLogin = async (provider: 'google' | 'github') => {
+  const handleOAuthLogin = async (provider: 'google' | 'github' | 'okta') => {
     try {
       const response = await api.get(`/auth/oauth/${provider}/login`);
       const authUrl = response.data.auth_url;
       const state = response.data.state;
-      
+
       // Store state for validation
       window.localStorage.setItem('oauth_state', state);
-      
+
       // Redirect to OAuth provider
       window.location.href = authUrl;
     } catch (error) {
@@ -199,7 +200,7 @@ export function LoginPage() {
           </form>
 
           {/* OAuth Login Options */}
-          {(oauthProviders.google?.enabled || oauthProviders.github?.enabled) && (
+          {(oauthProviders.google?.enabled || oauthProviders.github?.enabled || oauthProviders.okta?.enabled) && (
             <>
               <div className="flex items-center gap-4 my-4">
                 <Divider className="flex-1" />
@@ -242,6 +243,24 @@ export function LoginPage() {
                     <div className="absolute inset-0 bg-gradient-to-r from-purple-500/5 to-blue-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                     <span className="relative z-10 text-gray-700 dark:text-gray-200 font-semibold transition-colors duration-300 group-hover:text-gray-900 dark:group-hover:text-white">
                       {t('auth.continue_with_github')}
+                    </span>
+                  </Button>
+                )}
+
+                {oauthProviders.okta?.enabled && (
+                  <Button
+                    variant="flat"
+                    className="group relative w-full h-12 bg-gradient-to-r from-white to-gray-50 hover:from-gray-50 hover:to-white dark:from-gray-800 dark:to-gray-750 dark:hover:from-gray-750 dark:hover:to-gray-800 border border-gray-200 dark:border-gray-600 shadow-lg hover:shadow-xl transform hover:scale-[1.02] transition-all duration-300 ease-out overflow-hidden"
+                    startContent={
+                      <div className="relative z-10">
+                        <LocalIcon icon="simple-icons:okta" className="w-5 h-5 text-blue-600 dark:text-blue-400 transition-transform duration-300 group-hover:scale-110" />
+                      </div>
+                    }
+                    onPress={() => handleOAuthLogin('okta')}
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-r from-blue-600/5 to-blue-400/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                    <span className="relative z-10 text-gray-700 dark:text-gray-200 font-semibold transition-colors duration-300 group-hover:text-gray-900 dark:group-hover:text-white">
+                      {t('auth.continue_with_okta')}
                     </span>
                   </Button>
                 )}

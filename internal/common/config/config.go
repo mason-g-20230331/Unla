@@ -90,6 +90,7 @@ type (
 		CORS   *CORSConfig        `yaml:"cors,omitempty"`
 		Google *GoogleOAuthConfig `yaml:"google,omitempty"`
 		GitHub *GitHubOAuthConfig `yaml:"github,omitempty"`
+		Okta   *OktaOAuthConfig   `yaml:"okta,omitempty"`
 	}
 	OAuth2Config struct {
 		Issuer  string              `yaml:"issuer"`
@@ -117,6 +118,14 @@ type (
 
 	// GitHubOAuthConfig defines GitHub OAuth configuration
 	GitHubOAuthConfig struct {
+		ClientID     string `yaml:"client_id"`
+		ClientSecret string `yaml:"client_secret"`
+		RedirectURI  string `yaml:"redirect_uri"`
+	}
+
+	// OktaOAuthConfig defines Okta OIDC configuration
+	OktaOAuthConfig struct {
+		Domain       string `yaml:"domain"`        // Okta domain (e.g., dev-12345678.okta.com)
 		ClientID     string `yaml:"client_id"`
 		ClientSecret string `yaml:"client_secret"`
 		RedirectURI  string `yaml:"redirect_uri"`

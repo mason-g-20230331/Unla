@@ -236,6 +236,105 @@ func (h *OAuthHandler) GitHubCallback(c *gin.Context) {
 	c.Redirect(http.StatusTemporaryRedirect, frontendURL)
 }
 
+// OktaLogin initiates Okta OIDC login
+func (h *OAuthHandler) OktaLogin(c *gin.Context) {
+	if !h.auth.IsOktaOAuthEnabled() {
+		h.logger.Warn("Okta OAuth not enabled")
+		i18n.RespondWithError(c, i18n.ErrBadRequest.WithParam("Reason", "Okta OAuth not enabled"))
+		return
+	}
+
+	state := h.generateState()
+	h.states[state] = time.Now().Add(10 * time.Minute) // 10 minutes expiry
+
+	oktaOAuth := h.auth.GetOktaOAuth()
+	authURL := oktaOAuth.GetAuthURL(state)
+
+	h.logger.Info("initiating Okta OIDC login",
+		zap.String("state", state),
+		zap.String("remote_addr", c.ClientIP()))
+
+	c.JSON(http.StatusOK, gin.H{
+		"auth_url": authURL,
+		"state":    state,
+	})
+}
+
+// OktaCallback handles Okta OIDC callback
+func (h *OAuthHandler) OktaCallback(c *gin.Context) {
+	if !h.auth.IsOktaOAuthEnabled() {
+		h.logger.Warn("Okta OAuth not enabled")
+		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=oauth_not_enabled")
+		return
+	}
+
+	code := c.Query("code")
+	state := c.Query("state")
+
+	if code == "" || state == "" {
+		h.logger.Warn("missing code or state in Okta callback",
+			zap.String("remote_addr", c.ClientIP()))
+		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=missing_parameters")
+		return
+	}
+
+	// Validate state
+	if !h.validateState(state) {
+		h.logger.Warn("invalid state in Okta callback",
+			zap.String("state", state),
+			zap.String("remote_addr", c.ClientIP()))
+		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=invalid_state")
+		return
+	}
+
+	h.logger.Info("processing Okta OIDC callback",
+		zap.String("state", state),
+		zap.String("remote_addr", c.ClientIP()))
+
+	oktaOAuth := h.auth.GetOktaOAuth()
+
+	// Exchange code for token
+	tokenResp, err := oktaOAuth.ExchangeCode(c.Request.Context(), code)
+	if err != nil {
+		h.logger.Error("failed to exchange Okta code for token",
+			zap.Error(err),
+			zap.String("remote_addr", c.ClientIP()))
+		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=token_exchange_failed")
+		return
+	}
+
+	// Get user info
+	userInfo, err := oktaOAuth.GetUserInfo(c.Request.Context(), tokenResp.AccessToken)
+	if err != nil {
+		h.logger.Error("failed to get Okta user info",
+			zap.Error(err),
+			zap.String("remote_addr", c.ClientIP()))
+		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=user_info_failed")
+		return
+	}
+
+	// Handle user authentication
+	token, user, err := h.handleOAuthUser(c, userInfo)
+	if err != nil {
+		h.logger.Error("failed to handle Okta OAuth user",
+			zap.Error(err),
+			zap.String("email", userInfo.Email),
+			zap.String("remote_addr", c.ClientIP()))
+		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=user_creation_failed")
+		return
+	}
+
+	h.logger.Info("Okta OIDC login successful",
+		zap.String("email", userInfo.Email),
+		zap.String("username", user.Username),
+		zap.String("remote_addr", c.ClientIP()))
+
+	// Redirect to frontend with token in URL fragment (for security)
+	frontendURL := fmt.Sprintf("http://localhost:5173/login?oauth=success#token=%s&user_id=%d&username=%s&role=%s",
+		token, user.ID, user.Username, user.Role)
+	c.Redirect(http.StatusTemporaryRedirect, frontendURL)
+}
+
 // GetOAuthProviders returns available OAuth providers
 func (h *OAuthHandler) GetOAuthProviders(c *gin.Context) {
 	providers := gin.H{}
@@ -251,6 +350,13 @@ func (h *OAuthHandler) GetOAuthProviders(c *gin.Context) {
 		providers["github"] = gin.H{
 			"enabled": true,
 			"name":    "GitHub",
+		}
+	}
+
+	if h.auth.IsOktaOAuthEnabled() {
+		providers["okta"] = gin.H{
+			"enabled": true,
+			"name":    "Okta",
 		}
 	}
 
