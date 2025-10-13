@@ -38,6 +38,46 @@ func NewOAuthHandler(db database.Database, jwtService *jwt.Service, authService 
 	}
 }
 
+// getFrontendURL extracts the frontend URL from the request
+func (h *OAuthHandler) getFrontendURL(c *gin.Context) string {
+	// Try to get origin from request headers (most reliable for OAuth callbacks)
+	if origin := c.GetHeader("Origin"); origin != "" {
+		return origin
+	}
+
+	// Try referer as fallback
+	if referer := c.GetHeader("Referer"); referer != "" {
+		// Parse referer to extract base URL
+		if idx := strings.Index(referer, "/login"); idx > 0 {
+			return referer[:idx]
+		}
+		// Extract scheme://host from referer
+		if strings.HasPrefix(referer, "http://") || strings.HasPrefix(referer, "https://") {
+			parts := strings.SplitN(referer, "/", 4)
+			if len(parts) >= 3 {
+				return strings.Join(parts[:3], "/")
+			}
+		}
+	}
+
+	// Construct from request host
+	scheme := "http"
+	if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	host := c.Request.Host
+	if host != "" {
+		// Check if it's a backend port, likely need to map to frontend
+		if strings.Contains(host, ":5234") {
+			host = strings.Replace(host, ":5234", ":5173", 1)
+		}
+		return fmt.Sprintf("%s://%s", scheme, host)
+	}
+
+	// Last resort fallback
+	return "http://localhost:5173"
+}
+
 // GoogleLogin initiates Google OAuth login
 func (h *OAuthHandler) GoogleLogin(c *gin.Context) {
 	if !h.auth.IsGoogleOAuthEnabled() {
@@ -64,9 +104,11 @@ func (h *OAuthHandler) GoogleLogin(c *gin.Context) {
 
 // GoogleCallback handles Google OAuth callback
 func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
+	frontendBase := h.getFrontendURL(c)
+
 	if !h.auth.IsGoogleOAuthEnabled() {
 		h.logger.Warn("Google OAuth not enabled")
-		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=oauth_not_enabled")
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?oauth=error&message=oauth_not_enabled", frontendBase))
 		return
 	}
 
@@ -76,7 +118,7 @@ func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
 	if code == "" || state == "" {
 		h.logger.Warn("missing code or state in Google callback",
 			zap.String("remote_addr", c.ClientIP()))
-		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=missing_parameters")
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?oauth=error&message=missing_parameters", frontendBase))
 		return
 	}
 
@@ -85,7 +127,7 @@ func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
 		h.logger.Warn("invalid state in Google callback",
 			zap.String("state", state),
 			zap.String("remote_addr", c.ClientIP()))
-		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=invalid_state")
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?oauth=error&message=invalid_state", frontendBase))
 		return
 	}
 
@@ -101,7 +143,7 @@ func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
 		h.logger.Error("failed to exchange Google code for token",
 			zap.Error(err),
 			zap.String("remote_addr", c.ClientIP()))
-		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=token_exchange_failed")
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?oauth=error&message=token_exchange_failed", frontendBase))
 		return
 	}
 
@@ -111,7 +153,7 @@ func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
 		h.logger.Error("failed to get Google user info",
 			zap.Error(err),
 			zap.String("remote_addr", c.ClientIP()))
-		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=user_info_failed")
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?oauth=error&message=user_info_failed", frontendBase))
 		return
 	}
 
@@ -122,7 +164,7 @@ func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
 			zap.Error(err),
 			zap.String("email", userInfo.Email),
 			zap.String("remote_addr", c.ClientIP()))
-		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=user_creation_failed")
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?oauth=error&message=user_creation_failed", frontendBase))
 		return
 	}
 
@@ -132,8 +174,8 @@ func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
 		zap.String("remote_addr", c.ClientIP()))
 
 	// Redirect to frontend with token in URL fragment (for security)
-	frontendURL := fmt.Sprintf("http://localhost:5173/login?oauth=success#token=%s&user_id=%d&username=%s&role=%s",
-		token, user.ID, user.Username, user.Role)
+	frontendURL := fmt.Sprintf("%s/login?oauth=success#token=%s&user_id=%d&username=%s&role=%s",
+		frontendBase, token, user.ID, user.Username, user.Role)
 	c.Redirect(http.StatusTemporaryRedirect, frontendURL)
 }
 
@@ -163,9 +205,11 @@ func (h *OAuthHandler) GitHubLogin(c *gin.Context) {
 
 // GitHubCallback handles GitHub OAuth callback
 func (h *OAuthHandler) GitHubCallback(c *gin.Context) {
+	frontendBase := h.getFrontendURL(c)
+
 	if !h.auth.IsGitHubOAuthEnabled() {
 		h.logger.Warn("GitHub OAuth not enabled")
-		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=oauth_not_enabled")
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?oauth=error&message=oauth_not_enabled", frontendBase))
 		return
 	}
 
@@ -175,7 +219,7 @@ func (h *OAuthHandler) GitHubCallback(c *gin.Context) {
 	if code == "" || state == "" {
 		h.logger.Warn("missing code or state in GitHub callback",
 			zap.String("remote_addr", c.ClientIP()))
-		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=missing_parameters")
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?oauth=error&message=missing_parameters", frontendBase))
 		return
 	}
 
@@ -184,7 +228,7 @@ func (h *OAuthHandler) GitHubCallback(c *gin.Context) {
 		h.logger.Warn("invalid state in GitHub callback",
 			zap.String("state", state),
 			zap.String("remote_addr", c.ClientIP()))
-		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=invalid_state")
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?oauth=error&message=invalid_state", frontendBase))
 		return
 	}
 
@@ -200,7 +244,7 @@ func (h *OAuthHandler) GitHubCallback(c *gin.Context) {
 		h.logger.Error("failed to exchange GitHub code for token",
 			zap.Error(err),
 			zap.String("remote_addr", c.ClientIP()))
-		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=token_exchange_failed")
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?oauth=error&message=token_exchange_failed", frontendBase))
 		return
 	}
 
@@ -210,7 +254,7 @@ func (h *OAuthHandler) GitHubCallback(c *gin.Context) {
 		h.logger.Error("failed to get GitHub user info",
 			zap.Error(err),
 			zap.String("remote_addr", c.ClientIP()))
-		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=user_info_failed")
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?oauth=error&message=user_info_failed", frontendBase))
 		return
 	}
 
@@ -221,7 +265,7 @@ func (h *OAuthHandler) GitHubCallback(c *gin.Context) {
 			zap.Error(err),
 			zap.String("email", userInfo.Email),
 			zap.String("remote_addr", c.ClientIP()))
-		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=user_creation_failed")
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?oauth=error&message=user_creation_failed", frontendBase))
 		return
 	}
 
@@ -231,8 +275,8 @@ func (h *OAuthHandler) GitHubCallback(c *gin.Context) {
 		zap.String("remote_addr", c.ClientIP()))
 
 	// Redirect to frontend with token in URL fragment (for security)
-	frontendURL := fmt.Sprintf("http://localhost:5173/login?oauth=success#token=%s&user_id=%d&username=%s&role=%s",
-		token, user.ID, user.Username, user.Role)
+	frontendURL := fmt.Sprintf("%s/login?oauth=success#token=%s&user_id=%d&username=%s&role=%s",
+		frontendBase, token, user.ID, user.Username, user.Role)
 	c.Redirect(http.StatusTemporaryRedirect, frontendURL)
 }
 
@@ -262,9 +306,11 @@ func (h *OAuthHandler) OktaLogin(c *gin.Context) {
 
 // OktaCallback handles Okta OIDC callback
 func (h *OAuthHandler) OktaCallback(c *gin.Context) {
+	frontendBase := h.getFrontendURL(c)
+
 	if !h.auth.IsOktaOAuthEnabled() {
 		h.logger.Warn("Okta OAuth not enabled")
-		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=oauth_not_enabled")
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?oauth=error&message=oauth_not_enabled", frontendBase))
 		return
 	}
 
@@ -274,7 +320,7 @@ func (h *OAuthHandler) OktaCallback(c *gin.Context) {
 	if code == "" || state == "" {
 		h.logger.Warn("missing code or state in Okta callback",
 			zap.String("remote_addr", c.ClientIP()))
-		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=missing_parameters")
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?oauth=error&message=missing_parameters", frontendBase))
 		return
 	}
 
@@ -283,7 +329,7 @@ func (h *OAuthHandler) OktaCallback(c *gin.Context) {
 		h.logger.Warn("invalid state in Okta callback",
 			zap.String("state", state),
 			zap.String("remote_addr", c.ClientIP()))
-		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=invalid_state")
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?oauth=error&message=invalid_state", frontendBase))
 		return
 	}
 
@@ -299,7 +345,7 @@ func (h *OAuthHandler) OktaCallback(c *gin.Context) {
 		h.logger.Error("failed to exchange Okta code for token",
 			zap.Error(err),
 			zap.String("remote_addr", c.ClientIP()))
-		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=token_exchange_failed")
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?oauth=error&message=token_exchange_failed", frontendBase))
 		return
 	}
 
@@ -309,7 +355,7 @@ func (h *OAuthHandler) OktaCallback(c *gin.Context) {
 		h.logger.Error("failed to get Okta user info",
 			zap.Error(err),
 			zap.String("remote_addr", c.ClientIP()))
-		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=user_info_failed")
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?oauth=error&message=user_info_failed", frontendBase))
 		return
 	}
 
@@ -320,7 +366,7 @@ func (h *OAuthHandler) OktaCallback(c *gin.Context) {
 			zap.Error(err),
 			zap.String("email", userInfo.Email),
 			zap.String("remote_addr", c.ClientIP()))
-		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/login?oauth=error&message=user_creation_failed")
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?oauth=error&message=user_creation_failed", frontendBase))
 		return
 	}
 
@@ -330,8 +376,8 @@ func (h *OAuthHandler) OktaCallback(c *gin.Context) {
 		zap.String("remote_addr", c.ClientIP()))
 
 	// Redirect to frontend with token in URL fragment (for security)
-	frontendURL := fmt.Sprintf("http://localhost:5173/login?oauth=success#token=%s&user_id=%d&username=%s&role=%s",
-		token, user.ID, user.Username, user.Role)
+	frontendURL := fmt.Sprintf("%s/login?oauth=success#token=%s&user_id=%d&username=%s&role=%s",
+		frontendBase, token, user.ID, user.Username, user.Role)
 	c.Redirect(http.StatusTemporaryRedirect, frontendURL)
 }
 

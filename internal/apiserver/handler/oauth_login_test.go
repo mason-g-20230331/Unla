@@ -29,6 +29,7 @@ func (f *fakeExtOAuth) GetUserInfo(_ context.Context, _ string) (*auth.ExternalU
 type fakeAuth struct {
 	gEnabled  bool
 	ghEnabled bool
+	okEnabled bool
 }
 
 func (f *fakeAuth) ServerMetadata(r *http.Request) map[string]interface{} { return nil }
@@ -49,8 +50,10 @@ func (f *fakeAuth) IsOAuth2Enabled() bool                                 { retu
 func (f *fakeAuth) GetOAuth2CORS() *config.CORSConfig                     { return nil }
 func (f *fakeAuth) GetGoogleOAuth() auth.ExternalOAuth                    { return &fakeExtOAuth{url: "http://g/auth"} }
 func (f *fakeAuth) GetGitHubOAuth() auth.ExternalOAuth                    { return &fakeExtOAuth{url: "http://gh/auth"} }
+func (f *fakeAuth) GetOktaOAuth() auth.ExternalOAuth                      { return &fakeExtOAuth{url: "http://okta/auth"} }
 func (f *fakeAuth) IsGoogleOAuthEnabled() bool                            { return f.gEnabled }
 func (f *fakeAuth) IsGitHubOAuthEnabled() bool                            { return f.ghEnabled }
+func (f *fakeAuth) IsOktaOAuthEnabled() bool                              { return f.okEnabled }
 
 func TestGoogleAndGitHubLogin_And_Providers(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -106,4 +109,45 @@ func TestGoogleAndGitHubLogin_And_Providers(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w6.Code)
 	assert.Contains(t, w6.Body.String(), "google")
 	assert.Contains(t, w6.Body.String(), "github")
+}
+
+func TestOktaLogin_And_Providers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc, _ := jsvc.NewService(jsvc.Config{SecretKey: "this-is-a-very-long-secret-key-for-testing", Duration: time.Hour})
+
+	// Okta Disabled -> 400
+	h := NewOAuthHandler(nil, svc, &fakeAuth{}, zap.NewNop())
+	r := gin.New()
+	r.GET("/okta", h.OktaLogin)
+	r.GET("/providers", h.GetOAuthProviders)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/okta", nil)
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	w2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest("GET", "/providers", nil)
+	r.ServeHTTP(w2, req2)
+	assert.Equal(t, http.StatusOK, w2.Code)
+	assert.Contains(t, w2.Body.String(), "providers")
+
+	// Okta Enabled -> 200 with auth_url
+	h2 := NewOAuthHandler(nil, svc, &fakeAuth{okEnabled: true}, zap.NewNop())
+	r2 := gin.New()
+	r2.GET("/okta", h2.OktaLogin)
+	r2.GET("/providers", h2.GetOAuthProviders)
+
+	w3 := httptest.NewRecorder()
+	req3 := httptest.NewRequest("GET", "/okta", nil)
+	r2.ServeHTTP(w3, req3)
+	assert.Equal(t, http.StatusOK, w3.Code)
+	assert.Contains(t, w3.Body.String(), "auth_url")
+	assert.Contains(t, w3.Body.String(), "state")
+
+	w4 := httptest.NewRecorder()
+	req4 := httptest.NewRequest("GET", "/providers", nil)
+	r2.ServeHTTP(w4, req4)
+	assert.Equal(t, http.StatusOK, w4.Code)
+	assert.Contains(t, w4.Body.String(), "okta")
 }
