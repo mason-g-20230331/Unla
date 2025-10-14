@@ -40,32 +40,18 @@ func NewOAuthHandler(db database.Database, jwtService *jwt.Service, authService 
 
 // getFrontendURL extracts the frontend URL from the request
 func (h *OAuthHandler) getFrontendURL(c *gin.Context) string {
-	// Try to get origin from request headers (most reliable for OAuth callbacks)
-	if origin := c.GetHeader("Origin"); origin != "" {
-		return origin
-	}
-
-	// Try referer as fallback
-	if referer := c.GetHeader("Referer"); referer != "" {
-		// Parse referer to extract base URL
-		if idx := strings.Index(referer, "/login"); idx > 0 {
-			return referer[:idx]
-		}
-		// Extract scheme://host from referer
-		if strings.HasPrefix(referer, "http://") || strings.HasPrefix(referer, "https://") {
-			parts := strings.SplitN(referer, "/", 4)
-			if len(parts) >= 3 {
-				return strings.Join(parts[:3], "/")
-			}
-		}
-	}
-
-	// Construct from request host
+	// Construct from request host (primary method)
 	scheme := "http"
 	if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
 		scheme = "https"
 	}
-	host := c.Request.Host
+
+	// Try X-Forwarded-Host first (for reverse proxy scenarios)
+	host := c.GetHeader("X-Forwarded-Host")
+	if host == "" {
+		host = c.Request.Host
+	}
+
 	if host != "" {
 		// Check if it's a backend port, likely need to map to frontend
 		if strings.Contains(host, ":5234") {
