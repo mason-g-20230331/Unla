@@ -33,10 +33,16 @@ ENV TZ=UTC
 
 RUN apt-get update && apt-get install -y \
     tzdata \
+    curl \
+    iputils-ping \
     && rm -rf /var/lib/apt/lists/* \
     && ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime \
     && echo ${TZ} > /etc/timezone \
     && dpkg-reconfigure -f noninteractive tzdata
+
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get update && apt-get install -y nodejs && \
+    npm install -g npm@latest
 
 # Copy apiserver binary and config
 COPY --from=apiserver-builder /app/apiserver /app/
