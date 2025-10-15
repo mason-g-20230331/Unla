@@ -21,6 +21,10 @@ RUN apt-get update && apt-get install -y \
     && echo ${TZ} > /etc/timezone \
     && dpkg-reconfigure -f noninteractive tzdata
 
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get update && apt-get install -y nodejs && \
+    npm install -g npm@latest
+
 COPY --from=builder /app/mcp-gateway .
 COPY --from=builder /app/configs/mcp-gateway.yaml /etc/unla/
 COPY --from=builder /app/assets /app/assets
